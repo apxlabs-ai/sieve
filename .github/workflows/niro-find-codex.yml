@@ -25,7 +25,7 @@ jobs:
       NIRO_CONFIG_DIR: niro
       NIRO_GOAL: "Pentest this application"
       NIRO_CI_ARTIFACT_INCLUDE_FINDINGS: "true"
-      NIRO_CI_ARTIFACT_UPLOAD_DEBUG_LOGS: "false"
+      NIRO_CI_ARTIFACT_UPLOAD_DEBUG_LOGS: "true"
 
     steps:
       - name: Check out repository
