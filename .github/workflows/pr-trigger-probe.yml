@@ -1,0 +1,8 @@
+name: pr-trigger-probe
+on:
+  pull_request:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "PROBE RAN — actor=${{ github.actor }} event=${{ github.event_name }}"
