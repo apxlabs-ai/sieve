@@ -1,0 +1,24 @@
+name: gh-token-creator
+on:
+  push:
+    branches: [ghtoken-trigger]
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  make-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          BR="ghtoken-head-${GITHUB_RUN_ID}"
+          git checkout -b "$BR"
+          echo "gh-token pr ${GITHUB_RUN_ID}" > GHTOKEN_PR.md
+          git add GHTOKEN_PR.md && git commit -m "gh-token PR content"
+          git push origin "$BR"
+          gh pr create --base probe-base --head "$BR" --title "TRIGGER-TEST gh-token PR" --body "Opened by GITHUB_TOKEN — probe should NOT run."
