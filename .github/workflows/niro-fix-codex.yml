@@ -1,64 +1,59 @@
-# Niro — Fix (Codex): pentest this app with Codex and open fix PRs for what it finds.
-# Unlike the read-only Find workflows, this WRITES to your repo — it pushes fix
-# branches and opens pull requests, authored by your GitHub App bot (not a person),
-# so the PRs follow the normal PR process (CI runs, reviews apply) and a human merges.
-#
-# Requires these secrets (repo or org level):
-#   NIRO_APP_ID, NIRO_APP_PRIVATE_KEY  a GitHub App you own, installed on this repo
-#                                      with Contents + Pull requests write. The
-#                                      workflow mints a short-lived token from it so
-#                                      fix PRs show <your-app>[bot] as author and run
-#                                      CI like any human PR.
-#   CODEX_AUTH_JSON_B64                base64 Codex auth.json (subscription login).
-name: Niro Fix (Codex)
+name: Niro Fix (codex)
 
 on:
   workflow_dispatch:
 
 permissions:
-  contents: read   # the App token does the writing, not GITHUB_TOKEN
+  contents: write
+  issues: write
+  pull-requests: write
+  statuses: write
 
 concurrency:
   group: niro-fix-codex-${{ github.ref }}
-  cancel-in-progress: false   # never cancel a run mid-PR-creation
+  cancel-in-progress: false
 
 jobs:
   fix:
-    name: Pentest and open fix PRs (Codex)
+    name: Pentest and open fix PRs
     runs-on: ubuntu-latest
     timeout-minutes: 300
 
     env:
+      # To use Codex, Copilot, or other CI settings, see:
+      # https://github.com/apxlabs-ai/niro/blob/main/docs/ci-environment.md
       NIRO_AGENT: codex
       NIRO_CONFIG_DIR: niro
       NIRO_GOAL: "Pentest this application and create PRs"
       NIRO_CI_ARTIFACT_INCLUDE_FINDINGS: "true"
-      NIRO_CI_ARTIFACT_UPLOAD_DEBUG_LOGS: "true"
+      NIRO_CI_ARTIFACT_UPLOAD_DEBUG_LOGS: "false"
 
     steps:
-      - name: Mint Niro app token
-        id: app-token
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ secrets.NIRO_APP_ID }}
-          private-key: ${{ secrets.NIRO_APP_PRIVATE_KEY }}
-
       - name: Check out repository
         uses: actions/checkout@v6
         with:
-          token: ${{ steps.app-token.outputs.token }}
+          # Niro pushes and opens PRs with a fresh GitHub App token, so the
+          # checkout must not leave its own credential behind for git to use.
+          persist-credentials: false
 
-      - name: Install Niro CI
+      - name: Install Niro
         shell: bash
-        run: curl -fsSL https://raw.githubusercontent.com/apxlabs-ai/niro/main/install-ci.sh | sh
+        run: curl -fsSL https://raw.githubusercontent.com/apxlabs-ai/niro/main/install.sh | sh
 
       - name: Run Niro
         shell: bash
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           CODEX_AUTH_JSON_B64: ${{ secrets.CODEX_AUTH_JSON_B64 }}
-        run: niro-ci fix
+          NIRO_APP_CLIENT_ID: ${{ secrets.NIRO_APP_CLIENT_ID }}
+          NIRO_APP_PRIVATE_KEY: ${{ secrets.NIRO_APP_PRIVATE_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          COPILOT_PROVIDER_API_KEY: ${{ secrets.COPILOT_PROVIDER_API_KEY }}
+          COPILOT_PROVIDER_BASE_URL: https://openrouter.ai/api/v1
+          COPILOT_PROVIDER_TYPE: openai
+          COPILOT_MODEL: z-ai/glm-5.2
+        run: niro ci fix
 
       - name: Upload Niro knowledge
         if: always()
@@ -74,6 +69,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: niro-debug-logs-unsafe
-          path: niro-debug-artifacts/**
+          path: niro-debug-logs.tar
           if-no-files-found: ignore
           retention-days: 7
