@@ -23,7 +23,7 @@ jobs:
           persist-credentials: false
 
       - name: Install approved Niro configuration
-        uses: niro-demos/niro-configs/.github/actions/install@5e67fd8f39949c992af0abcd6efebb1a685353cf
+        uses: niro-demos/niro-configs/.github/actions/install@8c1cc4a6a127684d1395740a74faa5f9128d3a08
         with:
           repository: ${{ github.repository }}
           niro-dir: niro
