@@ -6,17 +6,51 @@ Sieve — a tiny API used as a local/CI smoke-test target for Niro
 ⚠️  Do NOT deploy Sieve or expose it to the internet. It is deliberately weak
     and exists only for local or CI testing — run it on localhost, nowhere else.
 """
+import secrets
+
 from flask import Flask, request, jsonify
+from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
 
+# Cleartext seed passwords, kept only to build the hashed store below (and to
+# document the seeded logins). Passwords are stored HASHED at rest — see USERS.
+_SEED_PASSWORDS = {"alice": "alice-pw", "bob": "bob-pw", "admin": "admin-pw"}
+
+
+def _seed_users():
+    """Build the in-memory user store with passwords hashed at rest."""
+    return {
+        "alice": {"id": 1, "password_hash": generate_password_hash(_SEED_PASSWORDS["alice"]),
+                  "email": "alice@sieve.test", "balance": 100,  "admin": False},
+        "bob":   {"id": 2, "password_hash": generate_password_hash(_SEED_PASSWORDS["bob"]),
+                  "email": "bob@sieve.test",   "balance": 8400, "admin": False},
+        "admin": {"id": 3, "password_hash": generate_password_hash(_SEED_PASSWORDS["admin"]),
+                  "email": "admin@sieve.test", "balance": 0,    "admin": True},
+    }
+
+
 # Seeded, in-memory "database" — no persistence, instant start.
-USERS = {
-    "alice": {"id": 1, "password": "alice-pw", "email": "alice@sieve.test", "balance": 100,  "admin": False},
-    "bob":   {"id": 2, "password": "bob-pw",   "email": "bob@sieve.test",   "balance": 8400, "admin": False},
-    "admin": {"id": 3, "password": "admin-pw", "email": "admin@sieve.test", "balance": 0,    "admin": True},
-}
-TOKENS = {}  # token -> username
+USERS = _seed_users()
+TOKENS = {}  # random session token -> username
+
+
+def reset_state():
+    """Re-seed the in-memory state. Test-support hook so the suite can run each
+    test against a clean, freshly-seeded database."""
+    global USERS, TOKENS
+    USERS = _seed_users()
+    TOKENS = {}
+
+
+def _current_user():
+    """Resolve the user for the request's bearer token, or None if the token is
+    missing/unknown. Tokens are unguessable random secrets looked up server-side."""
+    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    username = TOKENS.get(token)
+    if username is None:
+        return None
+    return USERS.get(username)
 
 
 @app.get("/")
@@ -32,29 +66,42 @@ def index():
 def login():
     body = request.get_json(force=True, silent=True) or {}
     user = USERS.get(body.get("username"))
-    if user and user["password"] == body.get("password"):
-        token = f"token-{user['id']}"
+    if user and check_password_hash(user["password_hash"], body.get("password") or ""):
+        # Random, unguessable session token — never derived from the account id.
+        token = secrets.token_urlsafe(32)
         TOKENS[token] = body["username"]
         return jsonify(token=token)
     return jsonify(error="invalid credentials"), 401
 
 
-# Return account details for the given id. A valid bearer token is required.
+# Return account details for the given id. A valid bearer token is required, and
+# a caller may only read their OWN account (admins may read any account).
 @app.get("/accounts/<int:account_id>")
 def account(account_id):
-    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-    if token not in TOKENS:
+    requester = _current_user()
+    if requester is None:
         return jsonify(error="unauthorized"), 401
     for username, user in USERS.items():
         if user["id"] == account_id:
+            if user["id"] != requester["id"] and not requester["admin"]:
+                return jsonify(error="forbidden"), 403
             return jsonify(id=user["id"], username=username, email=user["email"], balance=user["balance"])
     return jsonify(error="not found"), 404
 
 
-# Return the full user directory.
+# Return the full user directory. Admin-only, and never includes password data.
 @app.get("/admin/users")
 def admin_users():
-    return jsonify(users=USERS)
+    requester = _current_user()
+    if requester is None:
+        return jsonify(error="unauthorized"), 401
+    if not requester["admin"]:
+        return jsonify(error="forbidden"), 403
+    safe_users = {
+        username: {"id": u["id"], "email": u["email"], "balance": u["balance"], "admin": u["admin"]}
+        for username, u in USERS.items()
+    }
+    return jsonify(users=safe_users)
 
 
 if __name__ == "__main__":

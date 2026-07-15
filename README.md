@@ -23,10 +23,19 @@ docker run --rm -p 5000:5000 sieve
 |--------|------|-------|
 | `GET`  | `/`              | info + warning |
 | `POST` | `/login`         | body `{"username","password"}` → `{"token"}` |
-| `GET`  | `/accounts/<id>` | account details (requires a bearer token) |
-| `GET`  | `/admin/users`   | list all users |
+| `GET`  | `/accounts/<id>` | account details (own account only; admins may read any) |
+| `GET`  | `/admin/users`   | list all users (admin token required; no passwords returned) |
 
 Seeded users: `alice` / `alice-pw`, `bob` / `bob-pw`, `admin` / `admin-pw`.
+Passwords are stored hashed at rest; login returns an unguessable random token.
+
+## Tests
+
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest
+```
 
 ## License
 

@@ -1,0 +1,6 @@
+# Development / test dependencies for Sieve.
+#   python -m venv .venv && . .venv/bin/activate
+#   pip install -r requirements-dev.txt
+#   pytest
+flask==3.0.3
+pytest
