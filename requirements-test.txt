@@ -1,0 +1,5 @@
+# Test dependencies for the Sieve regression suite (see test_app.py).
+# Run: python -m venv .venv && .venv/bin/pip install -r requirements-test.txt
+#      .venv/bin/python -m pytest
+flask==3.0.3
+pytest>=8,<10
