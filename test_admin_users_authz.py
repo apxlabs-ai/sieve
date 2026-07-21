@@ -11,6 +11,7 @@ app's own in-memory USERS/TOKENS rather than reading any live-target fixtures.
 Passwords below are local test fixtures, not real credentials.
 """
 import json
+from copy import deepcopy
 
 import pytest
 
@@ -20,6 +21,13 @@ import app as sieve
 @pytest.fixture
 def client():
     sieve.app.config["TESTING"] = True
+    # Snapshot the module-level state before mutating it, and restore it on
+    # teardown. app.USERS / app.TOKENS are shared globals; without this, the
+    # actors seeded below (and their local test passwords) would leak into any
+    # other test file that imports the same module and relies on the original
+    # seeded users.
+    saved_users = deepcopy(sieve.USERS)
+    saved_tokens = deepcopy(sieve.TOKENS)
     # Recreate a deterministic, known set of actors: two standard users and one
     # admin, matching the roles the PoC exercised (standard user + admin).
     sieve.USERS.clear()
@@ -31,8 +39,14 @@ def client():
         }
     )
     sieve.TOKENS.clear()
-    with sieve.app.test_client() as c:
-        yield c
+    try:
+        with sieve.app.test_client() as c:
+            yield c
+    finally:
+        sieve.USERS.clear()
+        sieve.USERS.update(saved_users)
+        sieve.TOKENS.clear()
+        sieve.TOKENS.update(saved_tokens)
 
 
 def _login(client, username, password):
