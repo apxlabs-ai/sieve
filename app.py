@@ -6,6 +6,8 @@ Sieve — a tiny API used as a local/CI smoke-test target for Niro
 ⚠️  Do NOT deploy Sieve or expose it to the internet. It is deliberately weak
     and exists only for local or CI testing — run it on localhost, nowhere else.
 """
+import time
+
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -17,6 +19,24 @@ USERS = {
     "admin": {"id": 3, "password": "admin-pw", "email": "admin@sieve.test", "balance": 0,    "admin": True},
 }
 TOKENS = {}  # token -> username
+
+# username -> [timestamp, ...] of recent failed login attempts, in the same
+# in-memory-dict style as USERS/TOKENS. A rolling window: attempts older
+# than LOGIN_ATTEMPT_WINDOW_SECONDS don't count toward the threshold.
+FAILED_ATTEMPTS = {}
+LOGIN_ATTEMPT_LIMIT = 5
+LOGIN_ATTEMPT_WINDOW_SECONDS = 15 * 60
+
+
+def _recent_failed_attempts(username):
+    """Prune expired attempts for username and return the ones still live."""
+    now = time.time()
+    attempts = [t for t in FAILED_ATTEMPTS.get(username, []) if now - t < LOGIN_ATTEMPT_WINDOW_SECONDS]
+    if attempts:
+        FAILED_ATTEMPTS[username] = attempts
+    else:
+        FAILED_ATTEMPTS.pop(username, None)
+    return attempts
 
 
 @app.get("/")
@@ -31,11 +51,24 @@ def index():
 @app.post("/login")
 def login():
     body = request.get_json(force=True, silent=True) or {}
-    user = USERS.get(body.get("username"))
+    username = body.get("username")
+
+    # Lock out further attempts for this username once it has racked up too
+    # many failures in the current window -- checked before the password is
+    # ever compared, so a locked-out account can't be brute-forced further
+    # even if the attacker happens to send the right password.
+    if username is not None and len(_recent_failed_attempts(username)) >= LOGIN_ATTEMPT_LIMIT:
+        return jsonify(error="too many failed login attempts, try again later"), 429
+
+    user = USERS.get(username)
     if user and user["password"] == body.get("password"):
+        FAILED_ATTEMPTS.pop(username, None)  # successful login clears the counter
         token = f"token-{user['id']}"
-        TOKENS[token] = body["username"]
+        TOKENS[token] = username
         return jsonify(token=token)
+
+    if username is not None:
+        FAILED_ATTEMPTS.setdefault(username, []).append(time.time())
     return jsonify(error="invalid credentials"), 401
 
 
