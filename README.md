@@ -17,6 +17,9 @@ docker run --rm -p 5000:5000 sieve
 # → http://localhost:5000/
 ```
 
+To provision a local administrator for testing, start the container with
+`SIEVE_ADMIN_PASSWORD` set to a non-default value.
+
 ## Endpoints
 
 | Method | Path | Notes |
@@ -26,7 +29,7 @@ docker run --rm -p 5000:5000 sieve
 | `GET`  | `/accounts/<id>` | account details (requires a bearer token) |
 | `GET`  | `/admin/users`   | list all users |
 
-Seeded users: `alice` / `alice-pw`, `bob` / `bob-pw`, `admin` / `admin-pw`.
+Seeded users: `alice` / `alice-pw`, `bob` / `bob-pw`.
 
 ## License
 

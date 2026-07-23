@@ -6,17 +6,48 @@ Sieve — a tiny API used as a local/CI smoke-test target for Niro
 ⚠️  Do NOT deploy Sieve or expose it to the internet. It is deliberately weak
     and exists only for local or CI testing — run it on localhost, nowhere else.
 """
+import os
+
 from flask import Flask, request, jsonify
+from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
 
+DEFAULT_ADMIN_USERNAME = "admin"
+REJECTED_ADMIN_PASSWORDS = {"admin-pw"}
+
+
+def build_users():
+    users = {
+        "alice": {"id": 1, "password": "alice-pw", "email": "alice@sieve.test", "balance": 100,  "admin": False},
+        "bob":   {"id": 2, "password": "bob-pw",   "email": "bob@sieve.test",   "balance": 8400, "admin": False},
+    }
+
+    admin_password = os.environ.get("SIEVE_ADMIN_PASSWORD")
+    if not admin_password:
+        return users
+    if admin_password in REJECTED_ADMIN_PASSWORDS:
+        raise RuntimeError("SIEVE_ADMIN_PASSWORD must not use a public default password")
+
+    users[DEFAULT_ADMIN_USERNAME] = {
+        "id": 3,
+        "password_hash": generate_password_hash(admin_password),
+        "email": "admin@sieve.test",
+        "balance": 0,
+        "admin": True,
+    }
+    return users
+
+
 # Seeded, in-memory "database" — no persistence, instant start.
-USERS = {
-    "alice": {"id": 1, "password": "alice-pw", "email": "alice@sieve.test", "balance": 100,  "admin": False},
-    "bob":   {"id": 2, "password": "bob-pw",   "email": "bob@sieve.test",   "balance": 8400, "admin": False},
-    "admin": {"id": 3, "password": "admin-pw", "email": "admin@sieve.test", "balance": 0,    "admin": True},
-}
+USERS = build_users()
 TOKENS = {}  # token -> username
+
+
+def password_matches(user, password):
+    if "password_hash" in user:
+        return check_password_hash(user["password_hash"], password or "")
+    return user.get("password") == password
 
 
 @app.get("/")
@@ -32,7 +63,7 @@ def index():
 def login():
     body = request.get_json(force=True, silent=True) or {}
     user = USERS.get(body.get("username"))
-    if user and user["password"] == body.get("password"):
+    if user and password_matches(user, body.get("password")):
         token = f"token-{user['id']}"
         TOKENS[token] = body["username"]
         return jsonify(token=token)
