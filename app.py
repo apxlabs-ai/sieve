@@ -7,6 +7,7 @@ Sieve — a tiny API used as a local/CI smoke-test target for Niro
     and exists only for local or CI testing — run it on localhost, nowhere else.
 """
 from flask import Flask, request, jsonify
+from werkzeug.serving import WSGIRequestHandler
 
 app = Flask(__name__)
 
@@ -17,6 +18,11 @@ USERS = {
     "admin": {"id": 3, "password": "admin-pw", "email": "admin@sieve.test", "balance": 0,    "admin": True},
 }
 TOKENS = {}  # token -> username
+
+
+class PublicServerRequestHandler(WSGIRequestHandler):
+    def version_string(self):
+        return "Sieve"
 
 
 @app.get("/")
@@ -57,6 +63,10 @@ def admin_users():
     return jsonify(users=USERS)
 
 
+def run_server(host="0.0.0.0", port=5000):
+    app.run(host=host, port=port, request_handler=PublicServerRequestHandler)
+
+
 if __name__ == "__main__":
     # 0.0.0.0 so it is reachable from the pentest container; port 5000.
-    app.run(host="0.0.0.0", port=5000)
+    run_server()
