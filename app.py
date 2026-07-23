@@ -54,7 +54,16 @@ def account(account_id):
 # Return the full user directory.
 @app.get("/admin/users")
 def admin_users():
-    return jsonify(users=USERS)
+    directory = {
+        username: {
+            "id": user["id"],
+            "email": user["email"],
+            "balance": user["balance"],
+            "admin": user["admin"],
+        }
+        for username, user in USERS.items()
+    }
+    return jsonify(users=directory)
 
 
 if __name__ == "__main__":
