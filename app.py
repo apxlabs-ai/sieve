@@ -6,9 +6,15 @@ Sieve — a tiny API used as a local/CI smoke-test target for Niro
 ⚠️  Do NOT deploy Sieve or expose it to the internet. It is deliberately weak
     and exists only for local or CI testing — run it on localhost, nowhere else.
 """
+import secrets
+import time
+
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
+
+# Sessions expire after this many seconds so a leaked token cannot live forever.
+TOKEN_TTL_SECONDS = 3600
 
 # Seeded, in-memory "database" — no persistence, instant start.
 USERS = {
@@ -17,6 +23,7 @@ USERS = {
     "admin": {"id": 3, "password": "admin-pw", "email": "admin@sieve.test", "balance": 0,    "admin": True},
 }
 TOKENS = {}  # token -> username
+TOKEN_ISSUED_AT = {}  # token -> unix time the token was minted (for expiry)
 
 
 @app.get("/")
@@ -33,8 +40,12 @@ def login():
     body = request.get_json(force=True, silent=True) or {}
     user = USERS.get(body.get("username"))
     if user and user["password"] == body.get("password"):
-        token = f"token-{user['id']}"
+        # Mint a cryptographically-random, unguessable session token bound to a
+        # successful password check — never a deterministic function of a public
+        # field such as the numeric user id.
+        token = secrets.token_urlsafe(32)
         TOKENS[token] = body["username"]
+        TOKEN_ISSUED_AT[token] = time.time()
         return jsonify(token=token)
     return jsonify(error="invalid credentials"), 401
 
@@ -44,6 +55,12 @@ def login():
 def account(account_id):
     token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
     if token not in TOKENS:
+        return jsonify(error="unauthorized"), 401
+    # Reject tokens that have outlived their TTL so a leaked token is not valid
+    # indefinitely.
+    if time.time() - TOKEN_ISSUED_AT.get(token, 0) > TOKEN_TTL_SECONDS:
+        TOKENS.pop(token, None)
+        TOKEN_ISSUED_AT.pop(token, None)
         return jsonify(error="unauthorized"), 401
     for username, user in USERS.items():
         if user["id"] == account_id:
