@@ -30,7 +30,10 @@ def index():
 
 @app.post("/login")
 def login():
-    body = request.get_json(force=True, silent=True) or {}
+    body = request.get_json(force=True, silent=True)
+    if not isinstance(body, dict):
+        return jsonify(error="invalid credentials"), 401
+
     user = USERS.get(body.get("username"))
     if user and user["password"] == body.get("password"):
         token = f"token-{user['id']}"
