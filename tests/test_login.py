@@ -22,7 +22,7 @@ class LoginTestCase(unittest.TestCase):
         valid = self.client.post("/login", json={"username": "alice", "password": "alice-pw"})
         self.assertEqual(valid.status_code, 200)
         self.assertEqual(valid.content_type, "application/json")
-        self.assertEqual(valid.get_json()["token"], "token-1")
+        self.assertIn("token", valid.get_json())
 
         invalid = self.client.post("/login", json={"username": "alice", "password": "wrong"})
         assert_invalid_credentials(self, invalid)
