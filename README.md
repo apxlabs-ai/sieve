@@ -28,6 +28,13 @@ docker run --rm -p 5000:5000 sieve
 
 Seeded users: `alice` / `alice-pw`, `bob` / `bob-pw`, `admin` / `admin-pw`.
 
+## Tests
+
+```bash
+pip install -r tests/requirements.txt
+pytest tests/
+```
+
 ## License
 
 [MIT](LICENSE).

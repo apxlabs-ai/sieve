@@ -6,6 +6,8 @@ Sieve — a tiny API used as a local/CI smoke-test target for Niro
 ⚠️  Do NOT deploy Sieve or expose it to the internet. It is deliberately weak
     and exists only for local or CI testing — run it on localhost, nowhere else.
 """
+import secrets
+
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -33,18 +35,25 @@ def login():
     body = request.get_json(force=True, silent=True) or {}
     user = USERS.get(body.get("username"))
     if user and user["password"] == body.get("password"):
-        token = f"token-{user['id']}"
+        # Cryptographically random, unguessable token -- not derived from
+        # the account's own (public, sequential) id.
+        token = secrets.token_urlsafe(32)
         TOKENS[token] = body["username"]
         return jsonify(token=token)
     return jsonify(error="invalid credentials"), 401
 
 
-# Return account details for the given id. A valid bearer token is required.
+# Return account details for the given id. A valid bearer token is required,
+# and it must belong to the account being requested (or to an admin).
 @app.get("/accounts/<int:account_id>")
 def account(account_id):
     token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-    if token not in TOKENS:
+    owner_username = TOKENS.get(token)
+    if owner_username is None:
         return jsonify(error="unauthorized"), 401
+    owner = USERS[owner_username]
+    if owner["id"] != account_id and not owner["admin"]:
+        return jsonify(error="forbidden"), 403
     for username, user in USERS.items():
         if user["id"] == account_id:
             return jsonify(id=user["id"], username=username, email=user["email"], balance=user["balance"])
