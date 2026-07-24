@@ -39,12 +39,18 @@ def login():
     return jsonify(error="invalid credentials"), 401
 
 
-# Return account details for the given id. A valid bearer token is required.
+# Return account details for the given id. A valid bearer token is required,
+# and the token's owner must either be requesting their own account or be an
+# admin — otherwise this would let any logged-in user read anyone else's data.
 @app.get("/accounts/<int:account_id>")
 def account(account_id):
     token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-    if token not in TOKENS:
+    requester_username = TOKENS.get(token)
+    if requester_username is None:
         return jsonify(error="unauthorized"), 401
+    requester = USERS[requester_username]
+    if requester["id"] != account_id and not requester.get("admin"):
+        return jsonify(error="forbidden"), 403
     for username, user in USERS.items():
         if user["id"] == account_id:
             return jsonify(id=user["id"], username=username, email=user["email"], balance=user["balance"])
