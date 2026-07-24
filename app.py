@@ -6,6 +6,9 @@ Sieve — a tiny API used as a local/CI smoke-test target for Niro
 ⚠️  Do NOT deploy Sieve or expose it to the internet. It is deliberately weak
     and exists only for local or CI testing — run it on localhost, nowhere else.
 """
+import time
+from collections import defaultdict
+
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -17,6 +20,29 @@ USERS = {
     "admin": {"id": 3, "password": "admin-pw", "email": "admin@sieve.test", "balance": 0,    "admin": True},
 }
 TOKENS = {}  # token -> username
+
+# Login throttling: track failed attempts per (username, client_ip) so
+# unlimited, full-speed password guessing against any account is not
+# possible. In-memory only, matching this demo app's existing USERS/TOKENS
+# style; a real deployment would back this with Redis/DB-backed counters.
+LOGIN_RATE_LIMIT_WINDOW_SECONDS = 15 * 60
+LOGIN_RATE_LIMIT_MAX_FAILURES = 5
+LOGIN_FAILURES = defaultdict(list)  # (username, client_ip) -> [failure timestamps]
+
+
+def _client_ip():
+    return request.remote_addr or "unknown"
+
+
+def _is_login_throttled(key, now):
+    window_start = now - LOGIN_RATE_LIMIT_WINDOW_SECONDS
+    recent_failures = [t for t in LOGIN_FAILURES.get(key, ()) if t > window_start]
+    LOGIN_FAILURES[key] = recent_failures
+    return len(recent_failures) >= LOGIN_RATE_LIMIT_MAX_FAILURES
+
+
+def _record_login_failure(key, now):
+    LOGIN_FAILURES[key].append(now)
 
 
 @app.get("/")
@@ -31,11 +57,25 @@ def index():
 @app.post("/login")
 def login():
     body = request.get_json(force=True, silent=True) or {}
-    user = USERS.get(body.get("username"))
+    username = body.get("username")
+    key = (username, _client_ip())
+    now = time.monotonic()
+
+    user = USERS.get(username)
     if user and user["password"] == body.get("password"):
+        LOGIN_FAILURES.pop(key, None)  # reset the counter on success
         token = f"token-{user['id']}"
-        TOKENS[token] = body["username"]
+        TOKENS[token] = username
         return jsonify(token=token)
+
+    # Only *wrong* guesses count against the throttle -- a correct password
+    # always succeeds above, so this only ever slows down an attacker who
+    # doesn't already know it, never a legitimate user who mistypes it a
+    # couple of times and then gets it right.
+    if _is_login_throttled(key, now):
+        return jsonify(error="too many failed login attempts, try again later"), 429
+
+    _record_login_failure(key, now)
     return jsonify(error="invalid credentials"), 401
 
 
